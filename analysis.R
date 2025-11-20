@@ -2,6 +2,7 @@ library(dplyr)
 library(openxlsx)
 library(survival)
 library(survminer)
+library(coxphf)
 
 # Load the dataset
 data <- read.xlsx("data/Assignment Data Nov 2025.xlsx")
@@ -43,7 +44,7 @@ for (i in seq_along(cols_exp)) {
 }
 ph_assumptions <- bind_rows(ph_assumptions)
 
-# Run Cox regression on each gene expression with PFS without stratifying the treatment
+# Run Cox regression on each gene expression with PFS, stratifying the treatment
 cox_gene_results <- vector("list", length(cols_exp))
 for (i in seq_along(cols_exp)) {
     gene <- cols_exp[i]
@@ -60,4 +61,22 @@ for (i in seq_along(cols_exp)) {
     )
 }
 cox_gene_results <- bind_rows(cox_gene_results)
+
+# Still run Cox regression on each gene expression with PFS, stratifying the treatment, but considering the small sample issue
+cox_gene_small_sample <- vector("list", length(cols_exp))
+for (i in seq_along(cols_exp)) {
+    gene <- cols_exp[i]
+    cox_formula <- as.formula(sprintf("Surv(time.pfs, event.pfs) ~ %s + strata(treatment)", gene))
+    penalized_fit <- coxphf::coxphf(cox_formula, data = df)
+    beta_pena <- penalized_fit$coefficients[1]
+    se_pena <- sqrt(diag(penalized_fit$var))[1]
+    cox_gene_small_sample[[i]] <- data.frame(
+        HR = exp(beta_pena),
+        HR_lower = exp(beta_pena - 1.96 * se_pena),
+        HR_upper = exp(beta_pena + 1.96 * se_pena),
+        p_value = penalized_fit$prob[1],
+        stringsAsFactors = FALSE
+    )
+}
+cox_gene_small_sample <- bind_rows(cox_gene_small_sample)
 
