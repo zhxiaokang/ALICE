@@ -24,13 +24,10 @@ fit <- survfit(surv_object ~ df$treatment)
 p <- ggsurvplot(fit, data = df, pval = TRUE, conf.int = TRUE, risk.table = TRUE)
 
 # Run Cox regression to estimate the hazard ratio (HR) between treatment groups
-# Check whether Cox regression analyses have met the assumption of proportional hazards
+# Check wether Cox regression analyses have met the assumption of proportional hazards
 cox_model <- coxph(surv_object ~ df$treatment)
 ph_test <- cox.zph(cox_model)
-ph_pvalue <- ph_test$table[1, "p"]
-if (ph_pvalue < 0.05) {
-    cat("Warning: Proportional hazards assumption may be violated for treatment variable\n")
-}
+ph_p_value <- ph_test$table[1, "p"]
 
 # Check the Cox model summary
 beta <- coef(cox_model)[1]
@@ -131,35 +128,20 @@ for (i in seq_along(cols_exp)) {
                                               paste0(gene, "_group"), ": treatment"))
 
     # Fit Cox model with interaction
-    cox_interaction <- coxph(cox_formula_interaction, data = df)
-
-    # Check whether Cox regression analyses have met the assumption of proportional hazards
-    ph_test_interaction <- cox.zph(cox_interaction)
-    ph_test_interaction_coef <- ph_test_interaction$table
-    ph_test_interaction_pvalue <- ph_test_interaction_coef[grep(":", rownames(ph_test_interaction_coef)), "p"]
-
-    if (ph_test_interaction_pvalue < 0.05) {
-        cat("Warning: Proportional hazards assumption may be violated for interaction term in gene", gene, "\n")
-    }
+    cox_interaction <- coxphf::coxphf(cox_formula_interaction, data = df)
 
     # Extract interaction p-value (key test for predictive biomarker)
-    interaction_coef <- summary(cox_interaction)$coefficients
-    interaction_pvalue <- interaction_coef[grep(":", rownames(interaction_coef)), "Pr(>|z|)"]
+    interaction_pvalue <- cox_interaction$prob[grep(":", names(cox_interaction$coefficients))]
 
     # Calculate treatment effect (HR) in High/Low group
     # High expression group: Treatment B vs A
     df_high_group <- df[df[[paste0(gene, "_group")]] == "High", ]
     if(length(unique(df_high_group$treatment)) == 2) {  # both A and B are there
-        cox_high <- coxph(Surv(time.pfs, event.pfs) ~ treatment, data = df_high_group)
-        ph_test_high <- cox.zph(cox_high)
-        ph_test_high_coef <- ph_test_high$table
-        ph_test_high_pvalue <- ph_test_high_coef[1, "p"]
-        if (ph_test_high_pvalue < 0.05) {
-            cat("Warning: Proportional hazards assumption may be violated for high group in gene", gene, "\n")
-        }
-        hr_high <- exp(coef(cox_high))
-        hr_high_ci <- exp(confint(cox_high))
-        high_pvalue <- summary(cox_high)$coefficients[1, "Pr(>|z|)"]
+        cox_high <- coxphf::coxphf(Surv(time.pfs, event.pfs) ~ treatment, data = df_high_group)
+        hr_high <- exp(cox_high$coefficients[1])
+        hr_high_se <- sqrt(diag(cox_high$var))[1]
+        hr_high_ci <- c(exp(cox_high$coefficients[1] - 1.96 * hr_high_se), exp(cox_high$coefficients[1] + 1.96 * hr_high_se))
+        high_pvalue <- cox_high$prob[1]
     } else {
         high_pvalue <- NA
     }
@@ -167,16 +149,11 @@ for (i in seq_along(cols_exp)) {
     # Low expression group: Treatment B vs A
     df_low_group <- df[df[[paste0(gene, "_group")]] == "Low" & !is.na(df[[paste0(gene, "_group")]]), ]
     if(length(unique(df_low_group$treatment)) == 2) {
-        cox_low <- coxph(Surv(time.pfs, event.pfs) ~ treatment, data = df_low_group)
-        ph_test_low <- cox.zph(cox_low)
-        ph_test_low_coef <- ph_test_low$table
-        ph_test_low_pvalue <- ph_test_low_coef[1, "p"]
-        if (ph_test_low_pvalue < 0.05) {
-            cat("Warning: Proportional hazards assumption may be violated for low group in gene", gene, "\n")
-        }
-        hr_low <- exp(coef(cox_low))
-        hr_low_ci <- exp(confint(cox_low))
-        low_pvalue <- summary(cox_low)$coefficients[1, "Pr(>|z|)"]
+        cox_low <- coxphf::coxphf(Surv(time.pfs, event.pfs) ~ treatment, data = df_low_group)
+        hr_low <- exp(cox_low$coefficients[1])
+        hr_low_se <- sqrt(diag(cox_low$var))[1]
+        hr_low_ci <- c(exp(cox_low$coefficients[1] - 1.96 * hr_low_se), exp(cox_low$coefficients[1] + 1.96 * hr_low_se))
+        low_pvalue <- cox_low$prob[1]
     } else {
         low_pvalue <- NA
     }
